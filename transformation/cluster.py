@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.manifold import TSNE, Isomap
+from sklearn.cluster import KMeans, DBSCAN
 
 
 def pca(feature_vectors):
@@ -31,6 +32,20 @@ dim_reduction_method = {
 }
 
 
+def kmeans(coords):
+    return KMeans().fit_predict(coords)
+
+
+def dbscan(coords):
+    return DBSCAN(eps=0.1).fit_predict(coords)
+
+
+cluster_method = {
+    "kmeans": kmeans,
+    "dbscan": dbscan
+}
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("db_path", type=Path)
@@ -38,6 +53,9 @@ def main():
     parser.add_argument("--dimred", "-r", default="pca",
                         choices=dim_reduction_method.keys(),
                         help="Dimensionality reduction method to use")
+    parser.add_argument("--cluster", "-c", default="kmeans",
+                        choices=cluster_method.keys(),
+                        help="Clustering method to use")
     args = parser.parse_args()
 
     conn = sqlite3.connect(args.db_path)
@@ -64,11 +82,16 @@ def main():
 
     coords = dim_reduction_method[args.dimred](feature_vectors)
 
+    print("Clustering coordinates...")
+
+    clustered = cluster_method[args.cluster](coords)
+
     print("Writing results...")
     with open(args.out_path, "w") as out_file:
-        out_file.write("id,x,y\n")
-        for coord, tbs in zip(coords, tags_by_seal):
-            out_file.write("%i,%f,%f\n" % (tbs["id"], coord[0], coord[1]))
+        out_file.write("id,cluster,x,y\n")
+        for coord, cluster, tbs in zip(coords, clustered, tags_by_seal):
+            out_file.write("%i,%i,%f,%f\n" %
+                           (tbs["id"], cluster, coord[0], coord[1]))
 
 
 if __name__ == "__main__":
