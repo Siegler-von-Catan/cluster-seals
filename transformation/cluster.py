@@ -3,11 +3,13 @@
 from argparse import ArgumentParser
 import sqlite3
 from pathlib import Path
+from sklearn.decomposition import PCA
 
 
 def main():
     parser = ArgumentParser()
     parser.add_argument("db_path", type=Path)
+    parser.add_argument("out_path", type=Path)
     args = parser.parse_args()
 
     conn = sqlite3.connect(args.db_path)
@@ -24,8 +26,17 @@ def main():
                      "tags": [1 if tag in tags else 0 for tag in all_tags]}
                     for id, tags in tags_by_seal]
 
-    for thing in tags_by_seal:
-        print(thing)
+    feature_vectors = [seal["tags"] for seal in tags_by_seal]
+    # for thing in tags_by_seal:
+    #     print(thing)
+
+    pca = PCA(n_components=2)
+    coords = pca.fit_transform(feature_vectors)
+
+    with open(args.out_path, "w") as out_file:
+        out_file.write("id,x,y\n")
+        for coord, tbs in zip(coords, tags_by_seal):
+            out_file.write("%i,%f,%f\n" % (tbs["id"], coord[0], coord[1]))
 
 
 if __name__ == "__main__":
