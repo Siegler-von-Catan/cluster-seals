@@ -6,6 +6,7 @@ from pathlib import Path
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.manifold import TSNE, Isomap
 from sklearn.cluster import KMeans, DBSCAN
+import operator
 
 
 def pca(feature_vectors):
@@ -71,6 +72,7 @@ def main():
             JOIN tag ON tag.id = seal_has_tag.tag_id
             GROUP BY seal.id""").fetchall()
     tags_by_seal = [{"id": id,
+                     "tag_names": tags.split(";"),
                      "tags": [1 if tag in tags else 0 for tag in all_tags]}
                     for id, tags in tags_by_seal]
 
@@ -85,6 +87,24 @@ def main():
     print("Clustering coordinates...")
 
     clustered = cluster_method[args.cluster](coords)
+
+    cluster_counts = {}
+    for cluster, tags in zip(clustered, tags_by_seal):
+        if cluster not in cluster_counts:
+            cluster_counts[cluster] = {}
+        for tag in tags["tag_names"]:
+            if tag not in cluster_counts[cluster]:
+                cluster_counts[cluster][tag] = 1
+            else:
+                cluster_counts[cluster][tag] += 1
+
+    with open(args.out_path.parent.joinpath("cluster_" + args.out_path.name), "w") as cluster_file:
+        cluster_file.write("cluster,desc\n")
+        for cluster, counts in cluster_counts.items():
+            # print(cluster, "\n".join(list(map(operator.itemgetter(0), sorted(counts.items(), key=operator.itemgetter(1))[-5:]))))
+            desc = ".".join(list(map(operator.itemgetter(0), sorted(counts.items(), key=operator.itemgetter(1))[-5:])))
+            cluster_file.write("%i,%s\n" % (cluster, desc))
+
 
     print("Writing results...")
     with open(args.out_path, "w") as out_file:
