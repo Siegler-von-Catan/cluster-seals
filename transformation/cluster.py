@@ -3,11 +3,11 @@
 from argparse import ArgumentParser
 import sqlite3
 from pathlib import Path
+import operator
+import math
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.manifold import TSNE, Isomap
 from sklearn.cluster import KMeans, DBSCAN
-import operator
-import math
 import numpy as np
 
 
@@ -68,7 +68,7 @@ def main():
     all_tags = conn.execute("SELECT name FROM tag").fetchall()
     all_tags = {name[0]: i for i, name in enumerate(all_tags)}
 
-    id_and_tags = conn.execute("""SELECT seal.id, group_concat(name, ";")
+    id_and_tags = conn.execute("""SELECT seal.id, seal.family, group_concat(name, ";")
             FROM seal
             JOIN seal_has_tag ON seal.id = seal_has_tag.seal_id
             JOIN tag ON tag.id = seal_has_tag.tag_id
@@ -77,9 +77,11 @@ def main():
     #                  "tag_names": tags.split(";"),
     #                  "tags": [1 if tag in tags else 0 for tag in all_tags]}
     #                 for id, tags in tags_by_seal]
-    ids = [id for id, _ in id_and_tags]
-    tags = [tag_string.split(";") for _, tag_string in id_and_tags]
-    feature_vectors = [[int(tag in tags_by_seal) for tag in all_tags] for tags_by_seal in tags]
+    ids = [id for id, _, _ in id_and_tags]
+    families = [family for _, family, _ in id_and_tags]
+    tags = [tag_string.split(";") for _,_, tag_string in id_and_tags]
+    feature_vectors = [[int(tag in tags_by_seal)
+                        for tag in all_tags] for tags_by_seal in tags]
 
     # feature_vectors = [seal["tags"] for seal in tags_by_seal]
     # # for thing in tags_by_seal:
@@ -125,15 +127,21 @@ def main():
 
     print("Writing results...")
     with open(args.out_path, "w") as out_file:
-        out_file.write("id,cluster,x,y\n")
-        for coord, cluster, seal_id in zip(coords, clustered, ids):
-            out_file.write("%i,%i,%f,%f\n" %
-                           (seal_id, cluster, coord[0], coord[1]))
+        out_file.write("id;record_id;family;tags;cluster;x;y\n")
+        for coord, cluster, seal_id, family, seal_tags in zip(coords, clustered, ids, families, tags):
+            result = conn.execute(
+                "SELECT record_id FROM seal WHERE seal.id = ?", (seal_id,))
+            record_id = result.fetchone()[0]
+            out_file.write("%i;%i;%s;%s;%i;%f;%f\n" %
+                           (seal_id, record_id, family, ",".join(seal_tags), cluster, coord[0], coord[1]))
 
-    with open(args.out_path.parent.joinpath("cluster_" + args.out_path.name), "w") as cluster_file:
+    cluster_file_path = args.out_path.parent.joinpath(
+        "cluster_" + args.out_path.name)
+    with open(cluster_file_path, "w") as cluster_file:
         cluster_file.write("cluster,min_x,min_y,max_x,max_y\n")
         for cluster, (min_coord, max_coord) in cluster_extents.items():
-            cluster_file.write("%i,%f,%f,%f,%f\n" % (cluster, *min_coord, *max_coord))
+            cluster_file.write("%i,%f,%f,%f,%f\n" %
+                               (cluster, *min_coord, *max_coord))
 
 
 if __name__ == "__main__":
