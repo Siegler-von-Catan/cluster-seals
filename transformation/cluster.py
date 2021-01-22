@@ -1,14 +1,29 @@
 #!/usr/bin/env python3
 
+# ClusterSeals - Transform seal dataset for visualization
+# Copyright (C) 2021
+# Joana Bergsiek, Leonard Geier, Lisa Ihde,
+# Tobias Markus, Dominik Meier, Paul Methfessel
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 from argparse import ArgumentParser
 import sqlite3
 from pathlib import Path
-import operator
-import math
 from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.manifold import TSNE, Isomap
 from sklearn.cluster import KMeans, DBSCAN
-import numpy as np
 
 
 def pca(feature_vectors):
@@ -68,7 +83,7 @@ def main():
     all_tags = conn.execute("SELECT name FROM tag").fetchall()
     all_tags = {name[0]: i for i, name in enumerate(all_tags)}
 
-    id_and_tags = conn.execute("""SELECT seal.id, seal.family, group_concat(name, ";")
+    id_and_tags = conn.execute("""SELECT seal.id, group_concat(name, ";")
             FROM seal
             JOIN seal_has_tag ON seal.id = seal_has_tag.seal_id
             JOIN tag ON tag.id = seal_has_tag.tag_id
@@ -77,9 +92,8 @@ def main():
     #                  "tag_names": tags.split(";"),
     #                  "tags": [1 if tag in tags else 0 for tag in all_tags]}
     #                 for id, tags in tags_by_seal]
-    ids = [id for id, _, _ in id_and_tags]
-    families = [family for _, family, _ in id_and_tags]
-    tags = [tag_string.split(";") for _,_, tag_string in id_and_tags]
+    ids = [id for id, _ in id_and_tags]
+    tags = [tag_string.split(";") for _, tag_string in id_and_tags]
     feature_vectors = [[int(tag in tags_by_seal)
                         for tag in all_tags] for tags_by_seal in tags]
 
@@ -127,17 +141,12 @@ def main():
 
     print("Writing results...")
     with open(args.out_path, "w") as out_file:
-        out_file.write("id;record_id;family;tags;cluster;x;y\n")
-        for coord, cluster, seal_id, family, seal_tags in zip(coords, clustered, ids, families, tags):
-            result = conn.execute(
-                "SELECT record_id FROM seal WHERE seal.id = ?", (seal_id,))
-            record_id = result.fetchone()[0]
-            out_file.write("%i;%i;%s;%s;%i;%f;%f\n" %
-                           (seal_id, record_id, family, ",".join(seal_tags), cluster, coord[0], coord[1]))
+        out_file.write("id,record_id,cluster,x,y\n")
+        for coord, cluster, seal_id in zip(coords, clustered, ids):
+            out_file.write("%i,%i,%f,%f\n" %
+                           (seal_id, cluster, coord[0], coord[1]))
 
-    cluster_file_path = args.out_path.parent.joinpath(
-        "cluster_" + args.out_path.name)
-    with open(cluster_file_path, "w") as cluster_file:
+    with open(args.out_path.parent.joinpath("cluster_" + args.out_path.name), "w") as cluster_file:
         cluster_file.write("cluster,min_x,min_y,max_x,max_y\n")
         for cluster, (min_coord, max_coord) in cluster_extents.items():
             cluster_file.write("%i,%f,%f,%f,%f\n" %
